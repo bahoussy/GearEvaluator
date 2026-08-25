@@ -1,19 +1,8 @@
-local PRIMARY_STATS = {
-    ITEM_MOD_STRENGTH_SHORT = true,
-    ITEM_MOD_AGILITY_SHORT = true,
-    ITEM_MOD_INTELLECT_SHORT = true,
-    ITEM_MOD_STAMINA_SHORT = true,
-}
+local ADDON_NAME, addon = ...
 
-local SECONDARY_STATS = {
-    ITEM_MOD_CRIT_RATING_SHORT = true,
-    ITEM_MOD_HASTE_RATING_SHORT = true,
-    ITEM_MOD_MASTERY_RATING_SHORT = true,
-    ITEM_MOD_VERSATILITY = true,
-}
-
-local className, classFilename, classID = UnitClass("player")
-local spec = GetSpecialization()
+print("=== MY ADDON MAIN.LUA LOADED ===")
+print("Addon name:", ADDON_NAME)
+print("SpecWeights exists:", addon.SpecWeights ~= nil)
 
 local EQUIP_SLOTS = {
     { name = "CharacterHeadSlot",          id = INVSLOT_HEAD },
@@ -45,20 +34,29 @@ local RATING_COLORS = {
     ["C"]  = { 0.8,  0.8,  0.8  },
     ["D"]  = { 0.6,  0.4,  0.4  },
 }
+local SEASON_MIN_ILVL = 220
+local SEASON_MAX_ILVL = 344
 
--- ============================================================
--- Single edit point per season/patch (point #1 from before -
--- this replaces the five scattered magic numbers you had).
--- ============================================================
-local SEASON_MIN_ILVL = 220   -- season's floor (e.g. Explorer/Adventurer)
-local SEASON_MAX_ILVL = 344   -- season's ceiling (e.g. Myth 9/6)
+local SECONDARY_WEIGHTS = addon.SpecWeights.default
 
-local SECONDARY_WEIGHTS = {
-    ITEM_MOD_CRIT_RATING_SHORT     = 0.32,
-    ITEM_MOD_HASTE_RATING_SHORT    = 0.61,
-    ITEM_MOD_MASTERY_RATING_SHORT  = 0.42,
-    ITEM_MOD_VERSATILITY           = 0.04,
-}
+local function UpdateSpecWeights()
+    local specIndex = GetSpecialization()
+
+    print("GetSpecialization():", specIndex)
+
+    if not specIndex or specIndex == 0 then
+        print("No specialization yet")
+        SECONDARY_WEIGHTS = addon.SpecWeights.default
+        return
+    end
+
+    local specID = GetSpecializationInfo(specIndex)
+
+    print("Spec index:", specIndex)
+    print("Spec ID:", specID)
+
+    SECONDARY_WEIGHTS = addon.SpecWeights[specID] or addon.SpecWeights.default
+end
 
 local function GetItemRating(itemLink)
     if not itemLink then return nil end
@@ -68,34 +66,51 @@ local function GetItemRating(itemLink)
 
     local stats = C_Item.GetItemStats(itemLink)
     local secondaryScore = 0
+
     for stat, value in pairs(stats) do
         local weight = SECONDARY_WEIGHTS[stat]
+
         if weight then
             secondaryScore = secondaryScore + (value * weight)
         end
     end
 
-    -- Axis 1: where does this ilvl sit within THIS season's range,
-    -- as a 0-1 fraction, instead of a raw number.
-    local ilvlPercent = (itemLevel - SEASON_MIN_ILVL) / (SEASON_MAX_ILVL - SEASON_MIN_ILVL)
+    local ilvlPercent =
+        (itemLevel - SEASON_MIN_ILVL) /
+        (SEASON_MAX_ILVL - SEASON_MIN_ILVL)
+
     ilvlPercent = math.max(0, math.min(1, ilvlPercent))
 
-    -- Axis 2: stat quality RELATIVE to this item's own ilvl, not an
-    -- absolute number - since higher ilvl items carry bigger stat
-    -- budgets by design, dividing by itemLevel cancels that out.
     local statRatio = secondaryScore / itemLevel
 
-    local totalScore = (ilvlPercent * 70) + (math.min(statRatio / 2.5, 1) * 30)
+    local ilvlScore = ilvlPercent * 70
+    local statScore = math.min(statRatio / 2.5, 1) * 30
+    local totalScore = ilvlScore + statScore
 
-    print(itemLink .. ": " .. string.format("%.1f", totalScore))
+    local rating
 
-    if totalScore >= 90 then return "S+"
-    elseif totalScore >= 75 then return "S"
-    elseif totalScore >= 55 then return "A"
-    elseif totalScore >= 35 then return "B"
-    elseif totalScore >= 15 then return "C"
-    else return "D"
+    if totalScore >= 90 then
+        rating = "S+"
+    elseif totalScore >= 75 then
+        rating = "S"
+    elseif totalScore >= 55 then
+        rating = "A"
+    elseif totalScore >= 35 then
+        rating = "B"
+    elseif totalScore >= 15 then
+        rating = "C"
+    else
+        rating = "D"
     end
+
+    return {
+        rating = rating,
+        itemLevel = itemLevel,
+        secondaryScore = secondaryScore,
+        ilvlScore = ilvlScore,
+        statScore = statScore,
+        totalScore = totalScore,
+    }
 end
 
 
@@ -103,14 +118,17 @@ local bubbles = {}
 
 local function CreateBubble(slotButton)
     local bubble = CreateFrame("Frame", nil, slotButton, "BackdropTemplate")
+
     bubble:SetSize(24, 16)
     bubble:SetPoint("TOPRIGHT", slotButton, "TOPRIGHT", 4, 4)
-    bubble:SetFrameLevel(slotButton:GetFrameLevel() + 5) -- sit above the icon
+    bubble:SetFrameLevel(slotButton:GetFrameLevel() + 5)
+
     bubble:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
+
     bubble:SetBackdropColor(0, 0, 0, 0.85)
     bubble:SetBackdropBorderColor(1, 1, 1, 0.6)
 
@@ -118,31 +136,107 @@ local function CreateBubble(slotButton)
     text:SetPoint("CENTER")
     bubble.text = text
 
+    -- Allow the frame to receive mouse events.
+    bubble:EnableMouse(true)
+
+    bubble:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+
+        GameTooltip:AddLine("Gear Score Breakdown", 1, 1, 1)
+        GameTooltip:AddLine(" ")
+
+        GameTooltip:AddDoubleLine(
+            "Item Level",
+            tostring(self.itemLevel),
+            1, 1, 1,
+            1, 1, 1
+        )
+
+        GameTooltip:AddDoubleLine(
+            "Item Level Score",
+            string.format("%.1f", self.ilvlScore),
+            1, 1, 1,
+            1, 1, 1
+        )
+
+        GameTooltip:AddDoubleLine(
+            "Secondary Score",
+            string.format("%.1f", self.secondaryScore),
+            1, 1, 1,
+            1, 1, 1
+        )
+
+        GameTooltip:AddDoubleLine(
+            "Final Score",
+            string.format("%.1f", self.totalScore),
+            1, 0.84, 0,
+            1, 1, 1
+        )
+
+        GameTooltip:Show()
+    end)
+
+    bubble:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+    end)
+
     return bubble
 end
 
+
 local function UpdateAllRatings()
     for _, slot in ipairs(EQUIP_SLOTS) do
-        local button = _G[slot.name] -- Blizzard's frames are global, so _G lookup works
+        local button = _G[slot.name]
+
         if button then
-            bubbles[slot.name] = bubbles[slot.name] or CreateBubble(button)
+            bubbles[slot.name] =
+                bubbles[slot.name] or CreateBubble(button)
+
             local bubble = bubbles[slot.name]
 
             local itemLink = GetInventoryItemLink("player", slot.id)
-            local rating = GetItemRating(itemLink)
+            local result = GetItemRating(itemLink)
 
-            if rating then
-                bubble.text:SetText(rating)
-                local color = RATING_COLORS[rating] or { 1, 1, 1 }
-                bubble.text:SetTextColor(color[1], color[2], color[3])
+            if result then
+                bubble.text:SetText(result.rating)
+
+                local color =
+                    RATING_COLORS[result.rating] or { 1, 1, 1 }
+
+                bubble.text:SetTextColor(
+                    color[1],
+                    color[2],
+                    color[3]
+                )
+
+                -- Store the breakdown on the bubble.
+                bubble.itemLevel = result.itemLevel
+                bubble.secondaryScore = result.secondaryScore
+                bubble.ilvlScore = result.ilvlScore
+                bubble.statScore = result.statScore
+                bubble.totalScore = result.totalScore
+
                 bubble:Show()
             else
-                bubble:Hide() -- empty slot, or item data not loaded yet
+                bubble:Hide()
             end
         end
     end
 end
 
 
-
 CharacterFrame:HookScript("OnShow", UpdateAllRatings)
+
+
+local eventFrame = CreateFrame("Frame")
+
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+
+eventFrame:SetScript("OnEvent", function(self, event, ...)
+    print("Event fired:", event)
+
+    UpdateSpecWeights()
+
+    UpdateAllRatings()
+end)

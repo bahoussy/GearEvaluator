@@ -4,4 +4,5 @@
 ## Author: You
 ## Version: 0.1
 
+SpecWeights.lua
 NewAddon.lua
