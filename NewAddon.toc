@@ -1,0 +1,7 @@
+## Interface: 120005
+## Title: My First Addon
+## Notes: A tiny starter addon - shows a movable frame with your name and level, plus a /myfirst toggle command.
+## Author: You
+## Version: 0.1
+
+NewAddon.lua
