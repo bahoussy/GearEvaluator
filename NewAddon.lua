@@ -4,6 +4,30 @@ print("=== MY ADDON MAIN.LUA LOADED ===")
 print("Addon name:", ADDON_NAME)
 print("SpecWeights exists:", addon.SpecWeights ~= nil)
 
+local GetItemRating
+
+SLASH_MYTEST1 = "/test"
+SlashCmdList["MYTEST"] = function(msg)
+    local itemID = tonumber(msg)
+    if itemID then
+        local _, itemLink = GetItemInfo(itemID)
+        if itemLink then
+            print(itemLink)
+            local result = GetItemRating(itemLink)  -- see bug #3 below
+            if result then
+    print(result.rating, string.format("%.1f", result.totalScore))
+    print("itemLevel:", result.itemLevel, "ilvlScore:", result.ilvlScore)
+    print("secondaryScore:", result.secondaryScore, "statScore:", result.statScore)
+end
+        else
+            print("Item not cached. Try again in a second.")
+        end
+    else
+        print("Please provide a valid item ID. Example: /test 19019")
+    end
+end
+
+
 local EQUIP_SLOTS = {
     { name = "CharacterHeadSlot",          id = INVSLOT_HEAD },
     { name = "CharacterNeckSlot",          id = INVSLOT_NECK },
@@ -39,26 +63,44 @@ local SEASON_MAX_ILVL = 344
 
 local SECONDARY_WEIGHTS = addon.SpecWeights.default
 
-local function UpdateSpecWeights()
-    local specIndex = GetSpecialization()
+SlashCmdList["MYTEST"] = function(msg)
+    -- expects something like: /test 271526:13335:12854
+    local parts = { strsplit(":", msg) }
+    local itemID = tonumber(parts[1])
 
-    print("GetSpecialization():", specIndex)
-
-    if not specIndex or specIndex == 0 then
-        print("No specialization yet")
-        SECONDARY_WEIGHTS = addon.SpecWeights.default
+    if not itemID then
+        print("Please provide an item ID, optionally followed by bonus IDs.")
+        print("Example: /test 271526:13335:12854")
         return
     end
 
-    local specID = GetSpecializationInfo(specIndex)
+    local bonusIDs = {}
+    for i = 2, #parts do
+        table.insert(bonusIDs, parts[i])
+    end
 
-    print("Spec index:", specIndex)
-    print("Spec ID:", specID)
+    local itemString
+    if #bonusIDs > 0 then
+        itemString = "item:" .. itemID .. "::::::::::::" .. #bonusIDs .. ":" .. table.concat(bonusIDs, ":")
+    else
+        itemString = "item:" .. itemID
+    end
 
-    SECONDARY_WEIGHTS = addon.SpecWeights[specID] or addon.SpecWeights.default
+    local _, itemLink = GetItemInfo(itemString)
+    if itemLink then
+        print(itemLink)
+        local result = GetItemRating(itemLink)
+        if result then
+            print(result.rating, string.format("%.1f", result.totalScore))
+            print("itemLevel:", result.itemLevel, "ilvlScore:", result.ilvlScore)
+            print("secondaryScore:", result.secondaryScore, "statScore:", result.statScore)
+        end
+    else
+        print("Item not cached yet. Try again in a second.")
+    end
 end
 
-local function GetItemRating(itemLink)
+GetItemRating = function(itemLink)
     if not itemLink then return nil end
 
     local itemLevel = C_Item.GetDetailedItemLevelInfo(itemLink)
@@ -80,13 +122,17 @@ local function GetItemRating(itemLink)
         (SEASON_MAX_ILVL - SEASON_MIN_ILVL)
 
     ilvlPercent = math.max(0, math.min(1, ilvlPercent))
+    local ilvlScore = ilvlPercent * 70   -- <-- this was missing
+
+    local STAT_RATIO_MIN = 0.02
+    local STAT_RATIO_MAX = 0.18
 
     local statRatio = secondaryScore / itemLevel
+    local statPercent = (statRatio - STAT_RATIO_MIN) / (STAT_RATIO_MAX - STAT_RATIO_MIN)
+    statPercent = math.max(0, math.min(1, statPercent))
+    local statScore = statPercent * 30
 
-    local ilvlScore = ilvlPercent * 70
-    local statScore = math.min(statRatio / 2.5, 1) * 30
     local totalScore = ilvlScore + statScore
-
     local rating
 
     if totalScore >= 90 then
