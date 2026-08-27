@@ -6,3 +6,4 @@
 
 SpecWeights.lua
 NewAddon.lua
+TooltipRating.lua

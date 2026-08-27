@@ -13,7 +13,7 @@ SlashCmdList["MYTEST"] = function(msg)
         local _, itemLink = GetItemInfo(itemID)
         if itemLink then
             print(itemLink)
-            local result = GetItemRating(itemLink)  -- see bug #3 below
+            local result = GetItemRating(itemLink)  
             if result then
     print(result.rating, string.format("%.1f", result.totalScore))
     print("itemLevel:", result.itemLevel, "ilvlScore:", result.ilvlScore)
@@ -49,7 +49,6 @@ local EQUIP_SLOTS = {
     { name = "CharacterSecondaryHandSlot", id = INVSLOT_OFFHAND },
 }
 
--- Rating -> color, just for visual flair.
 local RATING_COLORS = {
     ["S+"] = { 1,    0.5,  0    },
     ["S"]  = { 1,    0.84, 0    },
@@ -107,6 +106,7 @@ GetItemRating = function(itemLink)
     if not itemLevel then return nil end
 
     local stats = C_Item.GetItemStats(itemLink)
+    if not stats then stats = {} end
     local secondaryScore = 0
 
     for stat, value in pairs(stats) do
@@ -228,6 +228,28 @@ local function CreateBubble(slotButton)
 
     return bubble
 end
+
+local function TooltipRating(tooltip, data)
+    -- 1. Safety check to ensure tooltip and data exist
+    if not tooltip or not data or not data.id then return end
+    
+    -- 2. Fetch the Item Link safely using the item ID
+    local _, itemLink = GetItemInfo(data.id)
+    
+    -- 3. If item info isn't cached yet, wait for it
+    if not itemLink then return end
+
+    -- 4. Calculate your rating
+    local result = GetItemRating(itemLink)
+    
+    -- 5. Add the text safely using modern API line addition
+    if result and result.rating then
+        tooltip:AddLine(" |cffffd100("..result.rating..")")
+        tooltip:AddLine(" |cffffd100("..result.totalScore..")")
+    end
+end
+TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, TooltipRating)
+
 
 
 local function UpdateAllRatings()
