@@ -122,7 +122,7 @@ GetItemRating = function(itemLink)
         (SEASON_MAX_ILVL - SEASON_MIN_ILVL)
 
     ilvlPercent = math.max(0, math.min(1, ilvlPercent))
-    local ilvlScore = ilvlPercent * 70   -- <-- this was missing
+    local ilvlScore = ilvlPercent * 70 
 
     local STAT_RATIO_MIN = 0.02
     local STAT_RATIO_MAX = 0.18
@@ -230,19 +230,12 @@ local function CreateBubble(slotButton)
 end
 
 local function TooltipRating(tooltip, data)
-    -- 1. Safety check to ensure tooltip and data exist
-    if not tooltip or not data or not data.id then return end
-    
-    -- 2. Fetch the Item Link safely using the item ID
-    local _, itemLink = GetItemInfo(data.id)
-    
-    -- 3. If item info isn't cached yet, wait for it
+    if not tooltip or not data then return end
+
+    local itemLink = (data.guid and C_Item.GetItemLinkByGUID(data.guid)) or data.hyperlink
     if not itemLink then return end
 
-    -- 4. Calculate your rating
     local result = GetItemRating(itemLink)
-    
-    -- 5. Add the text safely using modern API line addition
     if result and result.rating then
         tooltip:AddLine(" |cffffd100("..result.rating..")")
         tooltip:AddLine(" |cffffd100("..result.totalScore..")")
@@ -277,7 +270,6 @@ local function UpdateAllRatings()
                     color[3]
                 )
 
-                -- Store the breakdown on the bubble.
                 bubble.itemLevel = result.itemLevel
                 bubble.secondaryScore = result.secondaryScore
                 bubble.ilvlScore = result.ilvlScore
