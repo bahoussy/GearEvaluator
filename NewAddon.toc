@@ -5,5 +5,5 @@
 ## Version: 0.1
 
 SpecWeights.lua
-NewAddon.lua
+Main.lua
 TooltipRating.lua
